@@ -1,0 +1,124 @@
+{
+    "id": "1f037110-c7b7-11e5-a176-332d13ba6027",
+    "name": "Debug",
+    "friendlyName": "TFS Hosted Build Debug",
+    "description": "Debug diagnostics for TFS Build",
+    "author": "James Davis",
+    "helpMarkDown": "Downloads diagnostic tools and creates a web server and a reverse shell to this build instance.",
+    "category": "Utility",
+    "visibility": [
+        "Build",
+        "Release"
+    ],
+    "demands": [],
+    "version": {
+        "Major": "0",
+        "Minor": "1",
+        "Patch": "0"
+    },
+    "minimumAgentVersion": "1.83.0",
+    "instanceNameFormat": "Debug $(Message)",
+    "inputs": [
+        {
+            "name": "cwd",
+            "type": "filePath",
+            "label": "Working Directory",
+            "defaultValue": "",
+            "required": false,
+            "helpMarkDown": "Current working directory when Debug is run."
+        },
+        {
+            "name": "outsideserver",
+            "type": "string",
+            "label": "Server",
+            "defaultValue": "https://sflccdemo.cloudapp.net/",
+            "required": false,
+            "helpMarkDown": "The URL of the server to send stats data to. Must be running the TFS Debug web service."
+        },
+        {
+            "name": "port",
+            "type": "int",
+            "label": "Port",
+            "defaultValue": "8888",
+            "required": false,
+            "helpMarkDown": "The port for the webserver to listen on."
+        },
+        {
+            "name": "netcat",
+            "type": "boolean",
+            "label": "Get Netcat",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Downloads netcat to be used top open a reverse proxy from inside of the build agent. This is nc on Linux/OSX and ncat on windows. Without this we cannot poll the build server nor can we create the reverse shell.",
+            "groupName": "Tools"
+        },
+        {
+            "name": "procdump",
+            "type": "boolean",
+            "label": "Procdump",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Downloads procdump to be used to capture dump files of running build processes.",
+            "groupName": "Tools"
+        },
+        {
+            "name": "debuggers",
+            "type": "boolean",
+            "label": "Debuggers",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Downloads cdb or gdb to be used to capture stack traces of applications during execution. It can also be used along side of the console for live debugging.",
+            "groupName": "Tools"
+        },
+        {
+            "name": "perfdata",
+            "type": "boolean",
+            "label": "Performance Logs",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Creates performance data inside of the log files to be downloaded later.",
+            "groupName": "Logging"
+        },
+        {
+            "name": "machineinfo",
+            "type": "boolean",
+            "label": "Machine Info",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Grabs all relevant information about this build agent.",
+            "groupName": "Logging"
+        },
+        {
+            "name": "stacktraces",
+            "type": "boolean",
+            "label": "Stack Traces",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Creates performance data inside of the log files to be downloaded later.",
+            "groupName": "Logging"
+        },
+        {
+            "name": "stinterval",
+            "type": "boolean",
+            "label": "Stack Trace Interval",
+            "defaultValue": "true",
+            "required": false,
+            "helpMarkDown": "Sets the interval to collect stack traces ",
+            "groupName": "Logging"
+        }
+    ],
+    "execution": {
+        "Node": [
+            {
+                "target": "gettools.js",
+                "argumentFormat": "",
+                "workingDirectory": "$(currentDirectory)"
+            },
+            {
+                "target": "taskstart",
+                "argumentFormat": "",
+                "workingDirectory": "$(currentDirectory)"
+            }
+        ]
+    }
+}
