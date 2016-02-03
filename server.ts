@@ -1,8 +1,13 @@
 /// <reference path="../../definitions/vsts-task-lib.d.ts" />
-var http = require('http');
-var url = require('url');
-var Controller = require('./controllers/controllers');
-var Controllers = new Controller.Controllers.ControllerMain();
+
+import http = require('http');
+import url = require('url');
+import query = require('querystring')
+import path = require('path');
+import Controller = require('./controllers/controllers');
+
+const Controllers = new Controller.Controllers.ControllerMain();
+
 function getActions(request, response) {
     var urlParsed = url.parse(request.url, true);
     var parts = urlParsed.pathname.toLowerCase().split('/');
@@ -13,13 +18,14 @@ function getActions(request, response) {
         if (hasAction) {
             var action = Controllers[parts[1]][parts[2]];
             action(request, response);
-        }
-        else {
+        } else {
             route.notFound(response);
         }
     }
 }
-var server = http.createServer(function (request, response) {
+
+
+var server = http.createServer(function(request, response) {
     switch (request.method) {
         case "GET":
             getActions(request, response);
@@ -44,6 +50,8 @@ var server = http.createServer(function (request, response) {
             response.end();
             break;
     }
+
 });
+
 server.listen(8888);
 console.log("Server is listening");
