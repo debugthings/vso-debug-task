@@ -14,8 +14,19 @@ export module Controllers {
         putfunctions: string[] = [];
         postfunctions: string[] = [];
         deletefunctions: string[] = [];
+        // Hard coded because well, it's just me writing this
+        AllowedStaticTypes: string[] = ['gif', 'jpg', 'js', 'png', 'css'];
+        AllowedStaticDirs: string[] = ['./img', './js', './css'];
+        StaticResponsDir: string = './httpresponses/';
 
         constructor() {
+        }
+        
+        //Extract action
+        // We're using a simple /controller/action/value
+        extractValue(request: http.ServerRequest) {
+            var urlParsed = url.parse(request.url, true);
+            return urlParsed.pathname.split('/')[3];
         }
         
         // Register the method as a valid action
@@ -47,6 +58,21 @@ export module Controllers {
         }
         
         // Good response prototypes
+        createCSSResponse(response: http.ServerResponse) {
+            response.setHeader("Content-Type", "text/css");
+        }
+        createPNGResponse(response: http.ServerResponse) {
+            response.setHeader("Content-Type", "image/png");
+        }
+        createJPGResponse(response: http.ServerResponse) {
+            response.setHeader("Content-Type", "image/jpeg");
+        }
+        createGIFResponse(response: http.ServerResponse) {
+            response.setHeader("Content-Type", "image/gif");
+        }
+        createJSResponse(response: http.ServerResponse) {
+            response.setHeader("Content-Type", "application/javascript");
+        }
         createJSONResponse(response: http.ServerResponse) {
             response.setHeader("Content-Type", "application/json");
         }
@@ -74,55 +100,134 @@ export module Controllers {
         errorResponse(response: http.ServerResponse) {
             response.statusCode = 500;
         }
+        deniedResponse(response: http.ServerResponse) {
+            response.statusCode = 403;
+        }
+        authResponse(response: http.ServerResponse) {
+            response.statusCode = 401;
+        }
         
-        // Page Not Found
+        // This needs to be the last item called for any file read operation as it ends the stream
+        readFileToStream(response: http.ServerResponse, filename: string) {
+            var readstream = this.readFileToStreamNoEnd(response, filename);
+            readstream.on('end', () => { response.end(); });
+        }
+        // Read a file but do not end the stream
+        readFileToStreamNoEnd(response: http.ServerResponse, filename: string) {
+            var readstream = fs.createReadStream(filename);
+            readstream.on('data', (chunk) => {
+                response.write(chunk);
+            });
+            return readstream;
+        }
+        
+        // Page Not Found (404)
         notFound(response: http.ServerResponse) {
             this.notFoundResponse(response);
             this.createHTMLResponse(response);
+            this.readFileToStream(response, this.StaticResponsDir.concat('404.html'));
+        }
+        // Server error (500)
+        error(response: http.ServerResponse) {
+            this.errorResponse(response);
+            this.createHTMLResponse(response);
+            this.readFileToStream(response, this.StaticResponsDir.concat('500.html'));
+        }
 
+    }
+    export class staticresponsecontroller extends IController {
+        constructor() {
+            super();
+        }
+        handle(request: http.ServerRequest, response: http.ServerResponse): void {
+            var urlParsed = url.parse(request.url, true);
+            var fixedPath = '.'.concat(urlParsed.pathname);
+            var exttype = path.extname(fixedPath);
+            var notfound = false;
+            if (this.AllowedStaticTypes.indexOf(path.extname(fixedPath)) > -1) {
+                if (fs.existsSync(fixedPath))
+                    this.readFileToStream(response, fixedPath);
+                else
+                    notfound = true;
+            }
+            if (notfound)
+                this.notFound(response);
         }
     }
 
-    export class tfsfiles extends IController {
+    export class filesystem extends IController {
         constructor() {
             super();
             this.registerForGet("files");
         }
+        // http://localhost/filesystem/file/get?filename=c:\file << download the file
+        // http://localhost/filesystem/file/?filename=c:\file    << view file in browser
+        file(request: http.ServerRequest, response: http.ServerResponse): void {
+            var notfound = false;
+            var fileaction = this.extractValue(request);
+            fileaction = fileaction != undefined ? fileaction : 'get';
 
-        files(request: http.ServerRequest, response: http.ServerResponse): void {
             var urlParsed = url.parse(request.url, true);
-            var fileaction = urlParsed.pathname.split('/')[3] != undefined ? urlParsed.pathname.split('/')[3] : 'get';
             var qsobject = urlParsed.query;
             var filename = qsobject['filename'];
+            
+            // Find the file, if it's not there return not found
             if (filename != null || filename != undefined) {
-                fs.exists(filename, (exists: boolean) => {
+                if (fs.existsSync(filename)) {
                     super.goodResponse(response);
                     if (fileaction == 'get') {
                         super.createBinaryResponse(response);
-                        //: <file name.ext>
                         var header = 'attachment; filename=';
                         response.setHeader('Content-Disposition', header.concat(path.basename(filename)));
                     } else {
                         super.createTextResponse(response);
                     }
-                    var readstream = fs.createReadStream(filename);
-                    readstream.on('data', (chunk) => {
-                        response.write(chunk);
-                    });
-                    readstream.on('end', () => { response.end(); });
+                    this.readFileToStream(response, filename);
+                } else {
+                    notfound = true;
+                }
+            }
+            
+            // The contract here is to have the filename as part of the URL, if not it's an error
+            if (notfound)
+                this.notFound(response);
+            else
+                this.error(response);
+        }
+        
+        
+        // http://localhost/filesystem/directory/json?directory=c:\LR  << download the directory as JSON data
+        // http://localhost/filesystem/directory/?directory=c:\LR      << view directory in browser
+        directory(request: http.ServerRequest, response: http.ServerResponse): void {
+            var fileaction = this.extractValue(request);
+            fileaction = fileaction != undefined ? fileaction : 'get';
 
-                });
-            } else {
-                fs.readdir('./', (err: NodeJS.ErrnoException, files: string[]) => {
+            var urlParsed = url.parse(request.url, true);
+            var qsobject = urlParsed.query;
+            var directory = qsobject['directory'];
+            directory = path.dirname(directory);
+
+            if (directory != null || directory != undefined) {
+                if (fs.existsSync(directory)) {
                     super.goodResponse(response);
-                    super.createJSONResponse(response);
-                    response.write(JSON.stringify(files));
-                    response.end();
-                });
+                    if (fileaction = 'json') {
+                        fs.readdir('./', (err: NodeJS.ErrnoException, files: string[]) => {
+                            super.goodResponse(response);
+                            super.createJSONResponse(response);
+                            response.write(JSON.stringify(files));
+                            response.end();
+                        });
+                    } else {
+                        // Add in HTML operation here
+                    }
+                } else {
+                    this.notFound(response);
+                }
+            } else {
+                this.error(response);
             }
         }
     }
-
     export class debuggers extends IController {
         constructor() {
             super();
@@ -141,6 +246,7 @@ export module Controllers {
         constructor() {
             super();
             this.registerForGet("allprocesses");
+            this.registerForGet("process");
         }
         
         // Returns a list of processes and PIDs
@@ -162,14 +268,15 @@ export module Controllers {
         }
     }
     export class ControllerMain {
-        files: tfsfiles;
+        filesystem: filesystem;
         process: processes;
         debug: debuggers;
+        staticresponsecontroller: staticresponsecontroller;
         constructor() {
-            this.files = new tfsfiles();
+            this.filesystem = new filesystem();
             this.process = new processes();
             this.debug = new debuggers();
-
+            this.staticresponsecontroller = new staticresponsecontroller();
         }
     }
 }

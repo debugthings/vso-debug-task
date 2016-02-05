@@ -5,8 +5,10 @@ import url = require('url');
 import query = require('querystring')
 import path = require('path');
 import Controller = require('./controllers/controllers');
+import fs = require('fs');
 
 const Controllers = new Controller.Controllers.ControllerMain();
+const AllowedStaticTypes = ['gif', 'jpg', 'js','png', 'css']
 
 function getActions(request, response) {
     var urlParsed = url.parse(request.url, true);
@@ -21,6 +23,8 @@ function getActions(request, response) {
         } else {
             route.notFound(response);
         }
+    } else  {
+        Controllers.staticresponsecontroller.handle(request, response;)
     }
 }
 
