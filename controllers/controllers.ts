@@ -14,12 +14,14 @@ export module Controllers {
         putfunctions: string[] = [];
         postfunctions: string[] = [];
         deletefunctions: string[] = [];
+        
         // Hard coded because well, it's just me writing this
         AllowedStaticTypes: string[] = ['gif', 'jpg', 'js', 'png', 'css'];
         AllowedStaticDirs: string[] = ['./img', './js', './css'];
         StaticResponsDir: string = './httpresponses/';
 
         constructor() {
+
         }
         
         //Extract action
@@ -158,7 +160,8 @@ export module Controllers {
     export class filesystem extends IController {
         constructor() {
             super();
-            this.registerForGet("files");
+            this.registerForGet("file");
+            this.registerForGet("directory");
         }
         // http://localhost/filesystem/file/get?filename=c:\file << download the file
         // http://localhost/filesystem/file/?filename=c:\file    << view file in browser
@@ -173,25 +176,26 @@ export module Controllers {
             
             // Find the file, if it's not there return not found
             if (filename != null || filename != undefined) {
-                if (fs.existsSync(filename)) {
-                    super.goodResponse(response);
-                    if (fileaction == 'get') {
-                        super.createBinaryResponse(response);
-                        var header = 'attachment; filename=';
-                        response.setHeader('Content-Disposition', header.concat(path.basename(filename)));
+                fs.exists(filename, (exists) => {
+                    if (exists) {
+                        super.goodResponse(response);
+                        if (fileaction == 'get') {
+                            super.createBinaryResponse(response);
+                            var header = 'attachment; filename=';
+                            response.setHeader('Content-Disposition', header.concat(path.basename(filename)));
+                        } else {
+                            super.createTextResponse(response);
+                        }
+                        this.readFileToStream(response, filename);
                     } else {
-                        super.createTextResponse(response);
+                        notfound = true;
                     }
-                    this.readFileToStream(response, filename);
-                } else {
-                    notfound = true;
-                }
-            }
-            
-            // The contract here is to have the filename as part of the URL, if not it's an error
-            if (notfound)
-                this.notFound(response);
-            else
+                    if (notfound)
+                        this.notFound(response);
+
+                });
+            } else
+                // The contract here is to have the filename as part of the URL, if not it's an error
                 this.error(response);
         }
         
@@ -199,31 +203,36 @@ export module Controllers {
         // http://localhost/filesystem/directory/json?directory=c:\LR  << download the directory as JSON data
         // http://localhost/filesystem/directory/?directory=c:\LR      << view directory in browser
         directory(request: http.ServerRequest, response: http.ServerResponse): void {
-            var fileaction = this.extractValue(request);
+            var fileaction = super.extractValue(request);
             fileaction = fileaction != undefined ? fileaction : 'get';
 
             var urlParsed = url.parse(request.url, true);
             var qsobject = urlParsed.query;
             var directory = qsobject['directory'];
-            directory = path.dirname(directory);
+            //directory = path.dirname(directory);
+            var directoryListing = {};
 
             if (directory != null || directory != undefined) {
-                if (fs.existsSync(directory)) {
-                    super.goodResponse(response);
-                    if (fileaction = 'json') {
-                        fs.readdir('./', (err: NodeJS.ErrnoException, files: string[]) => {
-                            super.goodResponse(response);
-                            super.createJSONResponse(response);
-                            response.write(JSON.stringify(files));
-                            response.end();
-                        });
+                if (fs.exists(directory, (exists) => {
+                    if (exists) {
+                        super.goodResponse(response);
+                        if (fileaction = 'json') {
+                            fs.readdir(directory, (err: NodeJS.ErrnoException, files: string[]) => {
+                                super.goodResponse(response);
+                                super.createJSONResponse(response);
+                                response.write(JSON.stringify(files), () => {
+                                    response.end();
+                                });
+                            });
+                        } else {
+                            // Add in HTML operation here
+                        }
                     } else {
-                        // Add in HTML operation here
+                        this.notFound(response);
                     }
-                } else {
-                    this.notFound(response);
-                }
+                }));
             } else {
+                // Need to supply directory name.  There is no default action.
                 this.error(response);
             }
         }
@@ -258,8 +267,10 @@ export module Controllers {
                     }
                     super.goodResponse(response);
                     super.createJSONResponse(response);
-                    response.write(stdout);
-                    response.end();
+                    response.write(stdout, () => {
+                        response.end();
+                    });
+
                 });
         }
         // Takes the PID and gets the process details
@@ -272,6 +283,7 @@ export module Controllers {
         process: processes;
         debug: debuggers;
         staticresponsecontroller: staticresponsecontroller;
+        controllers: string[] = ['filesystem', 'process', 'debug'];
         constructor() {
             this.filesystem = new filesystem();
             this.process = new processes();

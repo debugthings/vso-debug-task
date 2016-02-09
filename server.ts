@@ -1,14 +1,17 @@
 /// <reference path="../../definitions/vsts-task-lib.d.ts" />
 
 import http = require('http');
+import child = require('child_process');
 import url = require('url');
 import query = require('querystring')
 import path = require('path');
 import Controller = require('./controllers/controllers');
 import fs = require('fs');
+import os = require('os');
+import dns = require('dns');
 
 const Controllers = new Controller.Controllers.ControllerMain();
-const AllowedStaticTypes = ['gif', 'jpg', 'js','png', 'css']
+
 
 function getActions(request, response) {
     var urlParsed = url.parse(request.url, true);
@@ -23,8 +26,8 @@ function getActions(request, response) {
         } else {
             route.notFound(response);
         }
-    } else  {
-        Controllers.staticresponsecontroller.handle(request, response;)
+    } else {
+        Controllers.staticresponsecontroller.handle(request, response);
     }
 }
 
@@ -57,5 +60,26 @@ var server = http.createServer(function(request, response) {
 
 });
 
-server.listen(8888);
-console.log("Server is listening");
+
+var active = server.listen(8888);
+var req = http.request({
+    hostname: 'whatsmyip.me',
+    port: 80,
+    path: '/',
+    method: 'GET'
+}, (res) => {
+    var ipaddr;
+    res.on('data', (chunk) => {
+        ipaddr = chunk.toString().trim();
+    });
+    res.on('end', () => {
+        dns.reverse(ipaddr, (e, domains) => {
+            console.log("Server is listening on %s:%d", ipaddr, server.address().port);
+            console.log("Hostname: %s", os.hostname());
+            domains.forEach(element => {
+                console.log("DNS Name: %s", element);
+            });
+        });
+    });
+});
+req.end();

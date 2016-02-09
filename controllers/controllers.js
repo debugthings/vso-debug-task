@@ -17,7 +17,17 @@ var Controllers;
             this.putfunctions = [];
             this.postfunctions = [];
             this.deletefunctions = [];
+            // Hard coded because well, it's just me writing this
+            this.AllowedStaticTypes = ['gif', 'jpg', 'js', 'png', 'css'];
+            this.AllowedStaticDirs = ['./img', './js', './css'];
+            this.StaticResponsDir = './httpresponses/';
         }
+        //Extract action
+        // We're using a simple /controller/action/value
+        IController.prototype.extractValue = function (request) {
+            var urlParsed = url.parse(request.url, true);
+            return urlParsed.pathname.split('/')[3];
+        };
         // Register the method as a valid action
         IController.prototype.registerForGet = function (fn) {
             this.getfunctions.push(fn);
@@ -45,6 +55,21 @@ var Controllers;
             return this.deletefunctions.indexOf(actionName) > -1;
         };
         // Good response prototypes
+        IController.prototype.createCSSResponse = function (response) {
+            response.setHeader("Content-Type", "text/css");
+        };
+        IController.prototype.createPNGResponse = function (response) {
+            response.setHeader("Content-Type", "image/png");
+        };
+        IController.prototype.createJPGResponse = function (response) {
+            response.setHeader("Content-Type", "image/jpeg");
+        };
+        IController.prototype.createGIFResponse = function (response) {
+            response.setHeader("Content-Type", "image/gif");
+        };
+        IController.prototype.createJSResponse = function (response) {
+            response.setHeader("Content-Type", "application/javascript");
+        };
         IController.prototype.createJSONResponse = function (response) {
             response.setHeader("Content-Type", "application/json");
         };
@@ -70,56 +95,145 @@ var Controllers;
         IController.prototype.errorResponse = function (response) {
             response.statusCode = 500;
         };
-        // Page Not Found
+        IController.prototype.deniedResponse = function (response) {
+            response.statusCode = 403;
+        };
+        IController.prototype.authResponse = function (response) {
+            response.statusCode = 401;
+        };
+        // This needs to be the last item called for any file read operation as it ends the stream
+        IController.prototype.readFileToStream = function (response, filename) {
+            var readstream = this.readFileToStreamNoEnd(response, filename);
+            readstream.on('end', function () { response.end(); });
+        };
+        // Read a file but do not end the stream
+        IController.prototype.readFileToStreamNoEnd = function (response, filename) {
+            var readstream = fs.createReadStream(filename);
+            readstream.on('data', function (chunk) {
+                response.write(chunk);
+            });
+            return readstream;
+        };
+        // Page Not Found (404)
         IController.prototype.notFound = function (response) {
             this.notFoundResponse(response);
             this.createHTMLResponse(response);
+            this.readFileToStream(response, this.StaticResponsDir.concat('404.html'));
+        };
+        // Server error (500)
+        IController.prototype.error = function (response) {
+            this.errorResponse(response);
+            this.createHTMLResponse(response);
+            this.readFileToStream(response, this.StaticResponsDir.concat('500.html'));
         };
         return IController;
     })();
-    var tfsfiles = (function (_super) {
-        __extends(tfsfiles, _super);
-        function tfsfiles() {
+    var staticresponsecontroller = (function (_super) {
+        __extends(staticresponsecontroller, _super);
+        function staticresponsecontroller() {
             _super.call(this);
-            this.registerForGet("files");
         }
-        tfsfiles.prototype.files = function (request, response) {
-            var _this = this;
+        staticresponsecontroller.prototype.handle = function (request, response) {
             var urlParsed = url.parse(request.url, true);
-            var fileaction = urlParsed.pathname.split('/')[3] != undefined ? urlParsed.pathname.split('/')[3] : 'get';
+            var fixedPath = '.'.concat(urlParsed.pathname);
+            var exttype = path.extname(fixedPath);
+            var notfound = false;
+            if (this.AllowedStaticTypes.indexOf(path.extname(fixedPath)) > -1) {
+                if (fs.existsSync(fixedPath))
+                    this.readFileToStream(response, fixedPath);
+                else
+                    notfound = true;
+            }
+            if (notfound)
+                this.notFound(response);
+        };
+        return staticresponsecontroller;
+    })(IController);
+    Controllers.staticresponsecontroller = staticresponsecontroller;
+    var filesystem = (function (_super) {
+        __extends(filesystem, _super);
+        function filesystem() {
+            _super.call(this);
+            this.registerForGet("file");
+            this.registerForGet("directory");
+        }
+        // http://localhost/filesystem/file/get?filename=c:\file << download the file
+        // http://localhost/filesystem/file/?filename=c:\file    << view file in browser
+        filesystem.prototype.file = function (request, response) {
+            var _this = this;
+            var notfound = false;
+            var fileaction = this.extractValue(request);
+            fileaction = fileaction != undefined ? fileaction : 'get';
+            var urlParsed = url.parse(request.url, true);
             var qsobject = urlParsed.query;
             var filename = qsobject['filename'];
+            // Find the file, if it's not there return not found
             if (filename != null || filename != undefined) {
                 fs.exists(filename, function (exists) {
-                    _super.prototype.goodResponse.call(_this, response);
-                    if (fileaction == 'get') {
-                        _super.prototype.createBinaryResponse.call(_this, response);
-                        //: <file name.ext>
-                        var header = 'attachment; filename=';
-                        response.setHeader('Content-Disposition', header.concat(path.basename(filename)));
+                    if (exists) {
+                        _super.prototype.goodResponse.call(_this, response);
+                        if (fileaction == 'get') {
+                            _super.prototype.createBinaryResponse.call(_this, response);
+                            var header = 'attachment; filename=';
+                            response.setHeader('Content-Disposition', header.concat(path.basename(filename)));
+                        }
+                        else {
+                            _super.prototype.createTextResponse.call(_this, response);
+                        }
+                        _this.readFileToStream(response, filename);
                     }
                     else {
-                        _super.prototype.createTextResponse.call(_this, response);
+                        notfound = true;
                     }
-                    var readstream = fs.createReadStream(filename);
-                    readstream.on('data', function (chunk) {
-                        response.write(chunk);
-                    });
-                    readstream.on('end', function () { response.end(); });
+                    if (notfound)
+                        _this.notFound(response);
                 });
+            }
+            else
+                // The contract here is to have the filename as part of the URL, if not it's an error
+                this.error(response);
+        };
+        // http://localhost/filesystem/directory/json?directory=c:\LR  << download the directory as JSON data
+        // http://localhost/filesystem/directory/?directory=c:\LR      << view directory in browser
+        filesystem.prototype.directory = function (request, response) {
+            var _this = this;
+            var fileaction = _super.prototype.extractValue.call(this, request);
+            fileaction = fileaction != undefined ? fileaction : 'get';
+            var urlParsed = url.parse(request.url, true);
+            var qsobject = urlParsed.query;
+            var directory = qsobject['directory'];
+            //directory = path.dirname(directory);
+            var directoryListing = {};
+            if (directory != null || directory != undefined) {
+                if (fs.exists(directory, function (exists) {
+                    if (exists) {
+                        _super.prototype.goodResponse.call(_this, response);
+                        if (fileaction = 'json') {
+                            fs.readdir(directory, function (err, files) {
+                                _super.prototype.goodResponse.call(_this, response);
+                                _super.prototype.createJSONResponse.call(_this, response);
+                                response.write(JSON.stringify(files), function () {
+                                    response.end();
+                                });
+                            });
+                        }
+                        else {
+                        }
+                    }
+                    else {
+                        _this.notFound(response);
+                    }
+                }))
+                    ;
             }
             else {
-                fs.readdir('./', function (err, files) {
-                    _super.prototype.goodResponse.call(_this, response);
-                    _super.prototype.createJSONResponse.call(_this, response);
-                    response.write(JSON.stringify(files));
-                    response.end();
-                });
+                // Need to supply directory name.  There is no default action.
+                this.error(response);
             }
         };
-        return tfsfiles;
+        return filesystem;
     })(IController);
-    Controllers.tfsfiles = tfsfiles;
+    Controllers.filesystem = filesystem;
     var debuggers = (function (_super) {
         __extends(debuggers, _super);
         function debuggers() {
@@ -139,6 +253,7 @@ var Controllers;
         function processes() {
             _super.call(this);
             this.registerForGet("allprocesses");
+            this.registerForGet("process");
         }
         // Returns a list of processes and PIDs
         processes.prototype.allprocesses = function (request, response) {
@@ -149,8 +264,9 @@ var Controllers;
                 }
                 _super.prototype.goodResponse.call(_this, response);
                 _super.prototype.createJSONResponse.call(_this, response);
-                response.write(stdout);
-                response.end();
+                response.write(stdout, function () {
+                    response.end();
+                });
             });
         };
         // Takes the PID and gets the process details
@@ -161,9 +277,11 @@ var Controllers;
     Controllers.processes = processes;
     var ControllerMain = (function () {
         function ControllerMain() {
-            this.files = new tfsfiles();
+            this.controllers = ['filesystem', 'process', 'debug'];
+            this.filesystem = new filesystem();
             this.process = new processes();
             this.debug = new debuggers();
+            this.staticresponsecontroller = new staticresponsecontroller();
         }
         return ControllerMain;
     })();

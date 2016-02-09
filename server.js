@@ -2,6 +2,8 @@
 var http = require('http');
 var url = require('url');
 var Controller = require('./controllers/controllers');
+var os = require('os');
+var dns = require('dns');
 var Controllers = new Controller.Controllers.ControllerMain();
 function getActions(request, response) {
     var urlParsed = url.parse(request.url, true);
@@ -17,6 +19,9 @@ function getActions(request, response) {
         else {
             route.notFound(response);
         }
+    }
+    else {
+        Controllers.staticresponsecontroller.handle(request, response);
     }
 }
 var server = http.createServer(function (request, response) {
@@ -45,5 +50,26 @@ var server = http.createServer(function (request, response) {
             break;
     }
 });
-server.listen(8888);
-console.log("Server is listening");
+var active = server.listen(8888);
+var req = http.request({
+    hostname: 'whatsmyip.me',
+    port: 80,
+    path: '/',
+    method: 'GET'
+}, function (res) {
+    var ipaddr;
+    res.on('data', function (chunk) {
+        ipaddr = chunk.toString().trim();
+    });
+    res.on('end', function () {
+        dns.reverse(ipaddr, function (e, domains) {
+            console.log("Server is listening on %s:%d", ipaddr, server.address().port);
+            console.log("Hostname: %s", os.hostname());
+            domains.forEach(function (element) {
+                console.log("DNS Name: %s", element);
+            });
+        });
+    });
+});
+req.end();
+active.unref();
